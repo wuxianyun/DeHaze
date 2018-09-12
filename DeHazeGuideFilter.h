@@ -4,16 +4,6 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
-#include <opencv.hpp>
-#include <opencv2\opencv.hpp>
-#include "opencv2/opencv_modules.hpp"
-#include <opencv2/core/utility.hpp>
-#include "opencv2/imgcodecs.hpp"
-#include "opencv2/highgui.hpp"
-
-
-using namespace std;
-using namespace cv;
 
 #define I3(a,b,c) ((c) * w * c + (b) * w + (a))
 #define I2(a,b)   ((b) * w + (a))
@@ -34,15 +24,15 @@ struct DehazeParas{
 	//int				*index;
 	float			*t;
 	float			*pre;
-	float			*t0, *tDown;
+	float			*tDown;
 	float			*filtered;
-	float			*inten;
-	float			*cha;
+	//float			*inten;
+	//float			*cha;
 	float			*alpha2;
 	float			*im_dark;
-	unsigned char	*deHaze;
+	int				*deHaze;
 };
 
 
-int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas);
+int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas);
 

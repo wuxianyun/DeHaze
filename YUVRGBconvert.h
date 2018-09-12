@@ -1,18 +1,14 @@
-#include <iostream>
-#include <opencv.hpp>
-#include <opencv2\opencv.hpp>
-#include <ctime>
-#include <windows.h>
-#include <cstdio>
-#include "opencv2/highgui.hpp"
-
-using namespace std;
-using namespace cv;
+#include <stdlib.h>
+#include <stdio.h>
 
 
-void conv_yuv420_to_mat(Mat &dst, unsigned char* pYUV420, int width, int height);
-void conv_yuv422_to_mat(Mat &dst, unsigned char* pYUV420, int width, int height);
-void conv_yuv400_to_mat(Mat &dst, unsigned char* pYUV400, int nWidth, int nHeight, int bit_depth);
+#define inline 
 
-void DisplayYUV420(const char *s_path, int img_w, int img_h);
-void DisplayYUV400(const char *s_path, int img_w, int img_h, int bit_depth);
+	 int qRound(float x);
+	 int qBound(int min, int x, int max);
+	 int yuv2r(int y, int u, int v);
+	 int yuv2g(int y, int u, int v);
+	 int yuv2b(int y, int u, int v);
+	 int rgb2y(int R, int G, int B);
+	 int rgb2u(int R, int G, int B);
+	 int rgb2v(int R, int G, int B);

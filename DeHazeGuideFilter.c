@@ -14,12 +14,12 @@
 void boxfilter( float *src, float *dst, int height, int width, int radius);
 void guidefilter(float *I, float *p, float *dst, int height, int width, int channel, int radius, float eps);
 
-float max(float a, float b)
+float mymax(float a, float b)
 {
 	if(a>b) return a;
 	else return b;
 }
-float min(float a, float b)
+float myfmin(float a, float b)
 {
 	if(a>b) return b;
 	else return a;
@@ -29,6 +29,12 @@ unsigned char round_me(float x)
     if(x>255) return 255;
     else if(x<0) return 0;
     else return x;
+}
+int round_me_14bit(float x)
+{
+	if (x>4095) return 4095;
+	else if (x<0) return 0;
+	else return x;
 }
 
 float rgb2gray(float *p)
@@ -227,9 +233,203 @@ void sort(float *p, int *index, int size)//use reduction sort, sort with index
     }
 }
 
+//boxfilter called by guidefilter
+//radius=radius*5;
+void boxfilter(float *src, float *dst, int height, int width, int radius)
+{
+	float *imCum;
+	int i, j;
+
+	imCum = (float *)malloc(width*height*sizeof(float));
+	assert(imCum != NULL);
+	//cumulative sum over Y axis ???
+	for (i = 0; i<width; i++)
+	{
+		imCum[i] = src[i];//First row copy form source
+		for (j = 1; j<height; j++)
+		{
+			imCum[j*width + i] = imCum[(j - 1)*width + i] + src[j*width + i];
+		}
+	}
+	//difference over Y axis
+	for (i = 0; i <= height - 1; i++)
+	{
+		if (i <= radius)
+		{
+			for (j = 0; j<width; j++)
+			{
+				dst[i*width + j] = imCum[(i + radius)*width + j];
+			}
+		}
+		else if (i <= height - radius - 1)//r+1:height-r
+		{
+			for (j = 0; j<width; j++)
+			{
+				dst[i*width + j] = imCum[(i + radius)*width + j] - imCum[(i - radius)*width + j];
+			}
+		}
+		else//height-r:height
+		{
+			for (j = 0; j<width; j++)
+			{
+				dst[i*width + j] = imCum[(height - 1)*width + j] - imCum[(i - radius)*width + j];
+			}
+		}
+	}
+
+	//cumulative sum over X axis ???
+	for (i = 0; i<height; i++)
+	{
+		imCum[i*width] = dst[i*width];//First row copy form dst
+		for (j = 1; j<width; j++)
+		{
+			imCum[i*width + j] = imCum[i*width + j - 1] + dst[i*width + j];
+		}
+	}
+	//difference over X axis
+	for (i = 0; i <= width - 1; i++)
+	{
+		if (i <= radius)
+		{
+			for (j = 0; j<height; j++)
+			{
+				dst[j*width + i] = imCum[j*width + i + radius];
+			}
+		}
+		else if (i <= width - radius - 1)//r+1:height-r
+		{
+			for (j = 0; j<height; j++)
+			{
+				dst[j*width + i] = imCum[j*width + i + radius] - imCum[j*width + i - radius];
+			}
+		}
+		else//height-r:height
+		{
+			for (j = 0; j<height; j++)
+			{
+				dst[j*width + i] = imCum[j*width + width - 1] - imCum[j*width + i - radius];
+			}
+		}
+	}
+	//Debug dst
+
+	free(imCum); imCum = NULL;
+}
+
+//guidefilter
+void guidefilter(float *I, float *p, float *dst, int height, int width, int channel, int radius, float eps)
+{
+	float	*N;
+	float	*One;
+	float	*mean_I;
+	float	*mean_p, *mean_Ip, *cov_Ip, *mean_II, *var_I, *a, *b, *mean_a, *mean_b;
+	float	*box_temp;
+	int		i, j;
+
+	N = (float *)malloc(width*height*sizeof(float));
+	One = (float *)malloc(width*height*sizeof(float));
+	mean_I = (float *)malloc(width*height*sizeof(float));
+	mean_p = (float *)malloc(width*height*sizeof(float));
+	mean_Ip = (float *)malloc(width*height*sizeof(float));
+	cov_Ip = (float *)malloc(width*height*sizeof(float));
+	mean_II = (float *)malloc(width*height*sizeof(float));
+	var_I = (float *)malloc(width*height*sizeof(float));
+	a = (float *)malloc(width*height*sizeof(float));
+	b = (float *)malloc(width*height*sizeof(float));
+	mean_a = (float *)malloc(width*height*sizeof(float));
+	mean_b = (float *)malloc(width*height*sizeof(float));
+	box_temp = (float *)malloc(width*height*sizeof(float));
+	assert(N != NULL);
+	assert(One != NULL);
+	assert(mean_I != NULL);
+	assert(mean_p != NULL);
+	assert(mean_Ip != NULL);
+	assert(cov_Ip != NULL);
+	assert(mean_II != NULL);
+	assert(var_I != NULL);
+	assert(a != NULL);
+	assert(b != NULL);
+	assert(mean_a != NULL);
+	assert(mean_b != NULL);
+	assert(box_temp != NULL);
+
+	for (i = 0; i<height; i++)//ones(height, width);
+	{
+		for (j = 0; j<width; j++)
+		{
+			One[i*width + j] = 1;
+		}
+	}
+
+	//N = boxfilter(ones(hei, wid), r);
+	boxfilter(One, N, height, width, radius);
+
+	//mean_I = boxfilter(I, r) ./ N;
+	boxfilter(I, mean_I, height, width, radius);
+	matrix_dot_divide(mean_I, N, mean_I, height, width);
+
+	//mean_p = boxfilter(p, r) ./ N;
+	boxfilter(p, mean_p, height, width, radius);
+	matrix_dot_divide(mean_p, N, mean_p, height, width);
+
+	//mean_Ip = boxfilter(I.*p, r) ./ N;
+	matrix_dot_multiple(I, p, box_temp, height, width);
+	boxfilter(box_temp, mean_Ip, height, width, radius);
+	matrix_dot_divide(mean_Ip, N, mean_Ip, height, width);
+
+	//cov_Ip = mean_Ip - mean_I .* mean_p;
+	matrix_dot_multiple(mean_I, mean_p, box_temp, height, width);
+	matrix_subtract(mean_Ip, box_temp, cov_Ip, height, width);
+
+	//mean_II = boxfilter(I.*I, r) ./ N;
+	matrix_dot_multiple(I, I, box_temp, height, width);
+	boxfilter(box_temp, mean_II, height, width, radius);
+	matrix_dot_divide(mean_II, N, mean_II, height, width);
+
+	//var_I = mean_II - mean_I .* mean_I;
+	matrix_dot_multiple(mean_I, mean_I, box_temp, height, width);
+	matrix_subtract(mean_II, mean_I, var_I, height, width);
+
+	//a = cov_Ip ./ (var_I + eps);
+	matrix_add_all(var_I, var_I, height, width, eps);
+	matrix_dot_divide(cov_Ip, var_I, a, height, width);
+
+	//b = mean_p - a .* mean_I;
+	matrix_dot_multiple(a, mean_I, box_temp, height, width);
+	matrix_subtract(mean_p, box_temp, b, height, width);
+
+	//mean_a = boxfilter(a, r) ./ N;
+	boxfilter(a, box_temp, height, width, radius);
+	matrix_dot_divide(box_temp, N, mean_a, height, width);
+
+	//mean_b = boxfilter(b, r) ./ N;
+	boxfilter(b, box_temp, height, width, radius);
+	matrix_dot_divide(box_temp, N, mean_b, height, width);
+
+	//q = mean_a .* I + mean_b;
+	matrix_dot_multiple(mean_a, I, dst, height, width);
+	matrix_add(dst, mean_b, dst, height, width);
+
+	free(N); N = NULL;
+	free(One); One = NULL;
+	free(mean_I); mean_I = NULL;
+	free(mean_p); mean_p = NULL;
+	free(mean_Ip); mean_Ip = NULL;
+	free(cov_Ip); cov_Ip = NULL;
+	free(mean_II); mean_II = NULL;
+	free(var_I); var_I = NULL;
+	free(a); a = NULL;
+	free(b); b = NULL;
+	free(mean_a); mean_a = NULL;
+	free(mean_b); mean_b = NULL;
+	free(box_temp); box_temp = NULL;
+}
+
+
+
 //guidefilter
 //int main(int argc, char *argv[])
-int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
+int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
 {
     int				iHeight,iWidth,iChannel,iSize;
     char			img_name[400],dehaze_img_name[400];
@@ -244,7 +444,7 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
 
 	float           *fog, *im;
 	float           *foggy, *clear;
-	unsigned char   *I_ori;
+	//unsigned char   *I_ori;
 	float			*win_dark;
 	float			*jarkvec;
 	float			*imvec;
@@ -254,20 +454,23 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
 	int				*index;
 	float			*t;
 	float			*pre;
-	float			*t0, *tDown;
+	//float			*t0;
+	float			*tDown;
 	float			*filtered;
-	float			*inten;
-	float			*cha;
+	//float			*inten;
+	//float			*cha;
 	float			*alpha2;
 	float			*im_dark;
-	unsigned char	*deHaze;
+	int				*deHaze;
+
+	int				shift = 4096;
 
 	iWidth	 = myParas.iWidth    ;
 	iHeight	 = myParas.iHeight   ;
 	iChannel = myParas.iChannel  ;
 	iSize    = myParas.iSize     ;
 
-	I_ori    = myParas.I_ori     ;
+	//I_ori    = myParas.I_ori     ;
 	fog      = myParas.fog       ;
 	deHaze   = myParas.deHaze    ;
 	foggy    = myParas.foggy     ;
@@ -275,28 +478,26 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
 	im_dark  = myParas.im_dark   ;
 	t        = myParas.t         ;
 	pre      = myParas.pre       ;
-	t0       = myParas.t0        ;
+	//t0       = myParas.t0        ;
 	tDown    = myParas.tDown     ;
 	filtered = myParas.filtered  ;
 	win_dark = myParas.win_dark  ;
 	indices  = myParas.indices   ;
 	df       = myParas.df        ;
 	df_gray  = myParas.df_gray   ;
-	inten    = myParas.inten     ;
-	cha      = myParas.cha       ;
+	//inten    = myParas.inten     ;
+	//cha      = myParas.cha       ;
 	alpha2   = myParas.alpha2    ;
 	clear    = myParas.clear     ;
                                
-	iWidth=img.cols;
-	iHeight=img.rows;
-	iChannel=img.channels();
-	printf("Width: %d Height: %d Channel: %d\n",iWidth,iHeight,iChannel);
+	printf("Width: %d Height: %d Channel: %d Radius: %d Tolerance: %d \n",iWidth,iHeight,iChannel,radius,tolerance);
 	
+
 
 	for(i=0;i<iHeight;i++){
 		for(j=0;j<iWidth;j++){
 			for(n=0;n<iChannel;n++){
-				fog[(i*iWidth+j)*iChannel+n]	= img.data[(i*iWidth+j)*iChannel+n]/1023.0f;//I_ori[(i*iWidth+j)*iChannel+n];           
+				fog[(i*iWidth+j)*iChannel+n]	= img[(i*iWidth+j)*iChannel+n]/4095.0f;//I_ori[(i*iWidth+j)*iChannel+n];           
 			}
 		}
 	}
@@ -309,16 +510,16 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
 	printf("1.Image erode time is %dms.\n",end-start);
 	
 
-    numpx	= (int)floor(iSize/1000);//choose 0.1% points
+    numpx	= (int)floor(iSize/100);//choose 0.1% points
     
-	int count[256] = { 0 };
+	int count[4096] = { 0 };
 	int thres = numpx;
 	for (i = 0; i < iSize; i++)
 	{
-		count[(int) (win_dark[i]*255) ] ++;
+		count[(int)(win_dark[i] * shift)] ++;
 	}
 	int cnt = 0;
-	for (i = 255; i > 0; i--)
+	for (i = shift-1; i > 0; i--)
 	{
 		cnt += count[i];
 		if (cnt > thres)
@@ -331,7 +532,7 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
 	int indice_index = 0;
 	for (i = 0; i < iSize; i++)
 	{
-		if ((int)(win_dark[i] * 255) == indice)
+		if ((int)(win_dark[i] * shift) == indice)
 			indice_index = i;
 	}
 	
@@ -382,18 +583,26 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
     imerode(im,im_dark,iHeight,iWidth,iChannel,radius);
     
 	end = clock();
-	printf("2.Image erode time is %dms.\n",end-start);
+	printf("2.Atomosphere ligth estimation time is %dms.\n",end-start);
 
     for(i=0;i<iSize;i++)
     {
         t[i] = 1.0f-w*im_dark[i];
     }
+
+	float SkyPreserve = 0.9;
+
+	for (i = 0; i<iSize; i++)
+	{
+		int temp = RGB2GRAY(fog[i * 3], fog[i * 3 + 1], fog[i * 3 + 2]);
+		t[i] =  (SkyPreserve * temp + t[i] * (4095 - temp) )/ 4095;
+	}
     
 	for(i=0;i<iSize;i++)
     {
-        t0[i]=0.1f;
-        if(t0[i]>t[i])
-            tDown[i]=t0[i];
+        //t0[i]=0.1f;
+        if(0.1f>t[i])
+            tDown[i]=0.1f;
         else
             tDown[i]=t[i];
     }    
@@ -422,23 +631,30 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
     
 	//Debug guidefilter, filtered wrong!!!
 	end = clock();
-	printf("3.DeHaze time is %dms.\n",end-start);
+	printf("3.Guide filter time is %dms.\n",end-start);
 
    
-	k=30;
+	//k=30;
+	//k = 100*16;// 30 * 16;
+	//by Wxyun 201809122322
+	k = tolerance;
+
+	float cha,inten;
     for(m=0;m<iHeight;m++)
     {
         for(n=0;n<iWidth;n++)
         {
-            cha[m*iWidth+n]=0;
+            //cha[m*iWidth+n]=0;
+			cha = 0;
             for(i=0;i<iChannel;i++)
             {
-                cha[m*iWidth+n]+=fog[m*iWidth*iChannel+n*iChannel+i];
+                //cha[m*iWidth+n]+=fog[m*iWidth*iChannel+n*iChannel+i];
+				cha += fog[m*iWidth*iChannel + n*iChannel + i];
             }
-            inten[m*iWidth+n]	=	cha[m*iWidth+n]/3;//inten(m,n)=mean(I(m,n,:))
-			cha[m*iWidth+n]		=	fabs( inten[m*iWidth+n]-atomsLight[0] );
+            inten	=	cha/3;//inten(m,n)=mean(I(m,n,:))
+			cha		=	fabs( inten-atomsLight[0] );
 			//cha=abs(inten-atmosLight(1));  
-			alpha2[m*iWidth+n]	=	min( max( (float) k/(cha[m*iWidth+n]*255.0f),1.0f)*max( (float)filtered[m*iWidth+n],0.1), 1);
+			alpha2[m*iWidth+n]	=	min( max( (float) k/(cha*4095.0f),1.0f)*max( (float)filtered[m*iWidth+n],0.1), 1);
 			//alpha2=min(max(k./cha,1.0).*max(filtered,0.1),1);
         }
     }
@@ -450,6 +666,8 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
         {
 			//t0[i*iWidth+j]		=	0.1f;
 			tDown[i*iWidth+j]	=	max(0.1f,alpha2[i*iWidth+j]);
+			//tDown[i*iWidth + j] = max(0.1f, (float)filtered[i*iWidth + j]); //by wxyun 20180828
+			
 			//t0=ones(m,n)*0.1;tDown=max(t0,alpha2);
 		}
 	}
@@ -472,215 +690,23 @@ int DeHazeCPU(Mat img, int radius, struct DehazeParas myParas)
         {
             for(n=0;n<iChannel;n++)
             {
-                deHaze[(i*iWidth+j)*iChannel+n]	=	round_me( clear[(i*iWidth+j)*iChannel+n]*255 );
+				deHaze[(i*iWidth + j)*iChannel + n] = round_me_14bit(clear[(i*iWidth + j)*iChannel + n] * 4095);
             }
         }
     }
 
 	end = clock();
-	printf("4.DeHaze time is %dms.\n",end-start);
+	printf("4.Clear time is %dms.\n",end-start);
 
 	
 	for(i=0;i<iHeight;i++){
 		for(j=0;j<iWidth;j++){
 			for(n=0;n<iChannel;n++){
-				img.data[(i*iWidth+j)*iChannel+n]	= deHaze[(i*iWidth+j)*iChannel+n];//I_ori[(i*iWidth+j)*iChannel+n];           
+				img[(i*iWidth+j)*iChannel+n]	= deHaze[(i*iWidth+j)*iChannel+n];//I_ori[(i*iWidth+j)*iChannel+n];           
 			}
 		}
 	}
     
     return 0;
-}
-
-//boxfilter called by guidefilter
-//radius=radius*5;
-void boxfilter( float *src, float *dst, int height, int width, int radius)
-{
-    float *imCum;
-    int i,j;
-    
-    imCum=(float *)malloc(width*height*sizeof(float));
-    assert(imCum!=NULL);
-    //cumulative sum over Y axis ???
-    for(i=0;i<width;i++)
-    {
-        imCum[i] = src[i];//First row copy form source
-        for(j=1;j<height;j++)
-        {
-            imCum[j*width+i] = imCum[(j-1)*width+i]+src[j*width+i];
-        }
-    }
-    //difference over Y axis
-    for(i=0;i<=height-1;i++)
-    {
-        if(i<=radius)
-        {
-            for(j=0;j<width;j++)
-            {
-                dst[i*width+j] = imCum[(i+radius)*width+j];
-            }
-        }
-        else if(i<=height-radius-1)//r+1:height-r
-        {
-            for(j=0;j<width;j++)
-            {
-                dst[i*width+j] = imCum[(i+radius)*width+j]-imCum[(i-radius)*width+j];
-            }
-        }
-        else//height-r:height
-        {
-            for(j=0;j<width;j++)
-            {
-                dst[i*width+j] = imCum[(height-1)*width+j]-imCum[(i-radius)*width+j];
-            }
-        }
-    }
-    
-    //cumulative sum over X axis ???
-    for(i=0;i<height;i++)
-    {
-        imCum[i*width] = dst[i*width];//First row copy form dst
-        for(j=1;j<width;j++)
-        {
-            imCum[i*width+j] = imCum[i*width+j-1]+dst[i*width+j];
-        }
-    }
-    //difference over X axis
-    for(i=0;i<=width-1;i++)
-    {
-        if(i<=radius)
-        {
-            for(j=0;j<height;j++)
-            {
-                dst[j*width+i] = imCum[j*width+i+radius];
-            }
-        }
-        else if(i<=width-radius-1)//r+1:height-r
-        {
-            for(j=0;j<height;j++)
-            {
-                dst[j*width+i] = imCum[j*width+i+radius]-imCum[j*width+i-radius];
-            }
-        }
-        else//height-r:height
-        {
-            for(j=0;j<height;j++)
-            {
-                dst[j*width+i] = imCum[j*width+width-1]-imCum[j*width+i-radius];
-            }
-        }
-    }
-    //Debug dst
-    
-    free(imCum);imCum=NULL;
-}
-
-//guidefilter
-void guidefilter(float *I, float *p, float *dst, int height, int width, int channel, int radius, float eps)
-{
-    float	*N;
-    float	*One;
-    float	*mean_I;
-    float	*mean_p,*mean_Ip,*cov_Ip,*mean_II,*var_I,*a,*b,*mean_a,*mean_b;
-    float	*box_temp;
-    int		i,j;
-    
-    N		=	(float *)malloc(width*height*sizeof(float));
-    One		=	(float *)malloc(width*height*sizeof(float));
-    mean_I  =   (float *)malloc(width*height*sizeof(float));
-    mean_p  =   (float *)malloc(width*height*sizeof(float));
-    mean_Ip =   (float *)malloc(width*height*sizeof(float));
-    cov_Ip  =   (float *)malloc(width*height*sizeof(float));
-    mean_II =   (float *)malloc(width*height*sizeof(float));
-    var_I   =   (float *)malloc(width*height*sizeof(float));
-    a       =   (float *)malloc(width*height*sizeof(float));
-    b       =   (float *)malloc(width*height*sizeof(float));
-    mean_a  =   (float *)malloc(width*height*sizeof(float));
-    mean_b  =   (float *)malloc(width*height*sizeof(float));
-    box_temp=   (float *)malloc(width*height*sizeof(float));
-    assert(N		!=NULL);
-    assert(One		!=NULL);
-    assert(mean_I   !=NULL);
-    assert(mean_p   !=NULL);
-    assert(mean_Ip  !=NULL);
-    assert(cov_Ip   !=NULL);
-    assert(mean_II  !=NULL);
-    assert(var_I    !=NULL);
-    assert(a        !=NULL);
-    assert(b        !=NULL);
-    assert(mean_a   !=NULL);
-    assert(mean_b   !=NULL);
-    assert(box_temp   !=NULL);
-    
-    for(i=0;i<height;i++)//ones(height, width);
-    {
-        for(j=0;j<width;j++)
-        {
-            One[i*width+j] = 1;
-        }
-    }
-    
-    //N = boxfilter(ones(hei, wid), r);
-    boxfilter( One, N, height, width, radius);
-    
-    //mean_I = boxfilter(I, r) ./ N;
-    boxfilter( I, mean_I, height, width, radius );
-    matrix_dot_divide(mean_I, N, mean_I, height, width );
-    
-    //mean_p = boxfilter(p, r) ./ N;
-    boxfilter( p, mean_p, height, width, radius );
-    matrix_dot_divide(mean_p, N, mean_p, height, width );
-    
-    //mean_Ip = boxfilter(I.*p, r) ./ N;
-    matrix_dot_multiple( I, p, box_temp, height, width );
-    boxfilter( box_temp, mean_Ip, height, width, radius );
-    matrix_dot_divide( mean_Ip, N, mean_Ip, height, width );
-    
-    //cov_Ip = mean_Ip - mean_I .* mean_p;
-    matrix_dot_multiple( mean_I, mean_p, box_temp, height, width );
-    matrix_subtract( mean_Ip, box_temp, cov_Ip, height, width );
-    
-    //mean_II = boxfilter(I.*I, r) ./ N;
-    matrix_dot_multiple( I, I, box_temp, height, width );
-    boxfilter( box_temp, mean_II, height, width, radius );
-	matrix_dot_divide( mean_II, N, mean_II, height, width );
-    
-    //var_I = mean_II - mean_I .* mean_I;
-    matrix_dot_multiple( mean_I, mean_I, box_temp, height, width );
-    matrix_subtract( mean_II, mean_I, var_I, height, width );
-    
-    //a = cov_Ip ./ (var_I + eps);
-    matrix_add_all( var_I, var_I, height, width, eps );
-    matrix_dot_divide( cov_Ip, var_I, a, height, width );
-    
-    //b = mean_p - a .* mean_I;
-    matrix_dot_multiple( a, mean_I, box_temp, height, width );
-    matrix_subtract( mean_p, box_temp, b, height, width );
-    
-    //mean_a = boxfilter(a, r) ./ N;
-    boxfilter( a, box_temp, height, width, radius );
-    matrix_dot_divide( box_temp, N, mean_a, height, width );
-    
-    //mean_b = boxfilter(b, r) ./ N;
-    boxfilter( b, box_temp, height, width, radius );
-    matrix_dot_divide( box_temp, N, mean_b, height, width );
-    
-    //q = mean_a .* I + mean_b;
-    matrix_dot_multiple( mean_a, I, dst, height, width );
-    matrix_add( dst, mean_b, dst, height, width );
-    
-    free(N		); N		=NULL;
-    free(One	); One		=NULL;   
-    free(mean_I ); mean_I   =NULL;
-    free(mean_p ); mean_p   =NULL;
-    free(mean_Ip); mean_Ip  =NULL;
-    free(cov_Ip ); cov_Ip   =NULL;
-    free(mean_II); mean_II  =NULL;
-    free(var_I  ); var_I    =NULL;
-    free(a      ); a        =NULL;
-    free(b      ); b        =NULL;
-    free(mean_a ); mean_a   =NULL;
-    free(mean_b ); mean_b   =NULL;
-    free(box_temp); box_temp=NULL;
 }
 
