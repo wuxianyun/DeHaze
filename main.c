@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
 	}
 
 	printf("----------------Current version: 1.03---------------------------\n");
-	printf("----------------Update data: 20180916---------------------------\n");
+	printf("----------------Update date: 20180916---------------------------\n");
 
 	
 	iWidth = globalArgs.width;
@@ -178,7 +178,7 @@ int main(int argc, char *argv[])
 	int framecnt = 0;
 
 	__int64 current_len = 0;
-	while (current_len <= filelength)
+	while (current_len < filelength)
 	{
 		printf("Process frame %d, ", framecnt);
 
