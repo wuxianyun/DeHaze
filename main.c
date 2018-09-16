@@ -110,6 +110,9 @@ int main(int argc, char *argv[])
 		opt = getopt_long(argc, argv, optString, longOpts, &longIndex);
 	}
 
+	printf("----------------Current version: 1.03---------------------------\n");
+	printf("----------------Update data: 20180916---------------------------\n");
+
 	
 	iWidth = globalArgs.width;
 	iHeight = globalArgs.height;
@@ -173,12 +176,16 @@ int main(int argc, char *argv[])
 
 	int cntlen = 0;
 	int framecnt = 0;
-	while (cntlen + iWidth * iHeight * iChannel * sizeof(short) <= filelength)
-	{
-		printf("Process frame %d \n", framecnt);
 
-		//每次读入一幅图，进行YUV到RGB转换操作，然后转换后图像去雾
-		cntlen += iWidth * iHeight * iChannel * sizeof(short);
+	__int64 current_len = 0;
+	while (current_len <= filelength)
+	{
+		printf("Process frame %d, ", framecnt);
+
+		current_len += iWidth * iHeight * iChannel * sizeof(short);
+		printf("process length %I64u, ", current_len);
+		printf("file length %I64u. \n", filelength);
+
 		fread(pYUV422, 1, iWidth * iHeight * iChannel * sizeof(short), readfile);
 		//conv_yuv420_to_mat(img, pYUV422, iWidth, iHeight);
 
@@ -205,8 +212,8 @@ int main(int argc, char *argv[])
 		//fclose(testfile);
 		
 		//by Wxyun 201809122322, add tolerance parameter
-		DeHazeCPU(img, radius, tolerance, myParas); //radius = 7
 
+		DeHazeCPU(img, radius, tolerance, myParas); //radius = 7
 		fwrite(img, 1, iWidth * iHeight * iChannel * sizeof(short), outfile);
 
 		framecnt++;
