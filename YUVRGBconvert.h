@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 
-#define inline 
+//#define inline 
 
 	 int qRound(float x);
 	 int qBound(int min, int x, int max);

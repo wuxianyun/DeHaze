@@ -31,8 +31,13 @@ struct DehazeParas{
 	float			*alpha2;
 	float			*im_dark;
 	int				*deHaze;
+
+	//by Wxyun 20181009
+	float			*atomsLight;
+	int				*Index;
+	int				atmoNum;
 };
 
 
-int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas);
+int DeHazeCPU(short *img, int radius, int tolerance, float brightadapt, struct DehazeParas myParas);
 

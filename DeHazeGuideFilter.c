@@ -429,7 +429,7 @@ void guidefilter(float *I, float *p, float *dst, int height, int width, int chan
 
 //guidefilter
 //int main(int argc, char *argv[])
-int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
+int DeHazeCPU(short *img, int radius, int tolerance, float brightadapt, struct DehazeParas myParas)
 {
     int				iHeight,iWidth,iChannel,iSize;
     char			img_name[400],dehaze_img_name[400];
@@ -490,10 +490,8 @@ int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
 	alpha2   = myParas.alpha2    ;
 	clear    = myParas.clear     ;
                                
-	printf("Width: %d Height: %d Channel: %d Radius: %d Tolerance: %d \n",iWidth,iHeight,iChannel,radius,tolerance);
+	printf("Width: %d Height: %d Channel: %d Radius: %d Tolerance: %d Bright: %f\n", iWidth, iHeight, iChannel, radius, tolerance, brightadapt);
 	
-
-
 	for(i=0;i<iHeight;i++){
 		for(j=0;j<iWidth;j++){
 			for(n=0;n<iChannel;n++){
@@ -510,7 +508,7 @@ int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
 	printf("1.Image erode time is %dms.\n",end-start);
 	
 
-    numpx	= (int)floor(iSize/100);//choose 0.1% points
+    numpx	= (int)floor(iSize/1000);//choose 0.1% points
     
 	int count[4096] = { 0 };
 	int thres = numpx;
@@ -536,6 +534,7 @@ int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
 			indice_index = i;
 	}
 	
+	//find the brightest gray pixel
     for(i=0;i<numpx;i++)
     {
         df_gray[i]=0;
@@ -545,6 +544,8 @@ int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
         }
         df_gray[i]=RGB2GRAY(df[i*3],df[i*3+1],df[i*3+2]);//RGB to GRAY
     }
+
+	/*
     index = (int *)malloc(numpx*sizeof(int));
     for(i=0;i<numpx;i++)
     {
@@ -561,11 +562,89 @@ int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
 			maxindex = i;
 		}
 	}
+	*/
+
+	//去掉最外面5个像素，减小设备影响
+	float maxdark = 0.0;
+	int   maxindex = 0;
+
+	//by Wxyun 20181009, elimate the 5 outside pixels
+	//取千分之一亮度点的平均值，减少奇异值影响
+	float r_cnt=0, g_cnt=0, b_cnt=0;
+	int   k_no=0;
+
+	for (i = 5; i < iHeight - 5; i++){
+		for (j = 5; j < iWidth - 5; j++){
+			//if (win_dark[i*iWidth + j] > maxdark)
+			if ((int)(win_dark[i*iWidth + j] * shift) == indice)
+			{
+				//maxdark = win_dark[i*iWidth + j];
+				//maxindex = i*iWidth + j;
+				r_cnt += fog[ (i*iWidth + j) * 3];
+				g_cnt += fog[ (i*iWidth + j) * 3+1];
+				b_cnt += fog[ (i*iWidth + j) * 3+2];
+				k_no++;
+			}
+		}
+	}
+
+
+	//myParas.Index[0] = maxindex;
+	//myParas.atomsLight[((int)(myParas.atmoNum) % 5) * 3] = fog[maxindex * 3];
+	//myParas.atomsLight[((int)(myParas.atmoNum) % 5) * 3 + 1] = fog[maxindex * 3 + 1];
+	//myParas.atomsLight[((int)(myParas.atmoNum) % 5) * 3 + 2] = fog[maxindex * 3 + 2];
+
+	myParas.atomsLight[((int)(myParas.atmoNum) % 5) * 3] = r_cnt/k_no;
+	myParas.atomsLight[((int)(myParas.atmoNum) % 5) * 3 + 1] = g_cnt / k_no;
+	myParas.atomsLight[((int)(myParas.atmoNum) % 5) * 3 + 2] = b_cnt / k_no;
+
+	//5帧均值，前四帧不处理
+	if (myParas.atmoNum >= 4)
+	{
+		myParas.atomsLight[5 * 3] = 0;
+		myParas.atomsLight[5 * 3 + 1] = 0;
+		myParas.atomsLight[5 * 3 + 2] = 0;
+		for (i = 0; i < 5; i++)
+		{
+			myParas.atomsLight[5 * 3] = myParas.atomsLight[5 * 3] + myParas.atomsLight[i * 3];
+			myParas.atomsLight[5 * 3 + 1] = myParas.atomsLight[5 * 3 + 1] + myParas.atomsLight[i * 3 + 1];
+			myParas.atomsLight[5 * 3 + 2] = myParas.atomsLight[5 * 3 + 2] + myParas.atomsLight[i * 3 + 2];
+		}
+		myParas.atomsLight[5 * 3] = myParas.atomsLight[5 * 3] / 5;
+		myParas.atomsLight[5 * 3 + 1] = myParas.atomsLight[5 * 3 + 1] / 5;
+		myParas.atomsLight[5 * 3 + 2] = myParas.atomsLight[5 * 3 + 2] / 5;
+
+		//大气光赋值
+		atomsLight[0] = myParas.atomsLight[5 * 3];
+		atomsLight[1] = myParas.atomsLight[5 * 3 + 1];
+		atomsLight[2] = myParas.atomsLight[5 * 3 + 2];
+
+		//写入excel的数据
+		myParas.atomsLight[5 * 3] = atomsLight[0] * 4095;
+		myParas.atomsLight[5 * 3 + 1] = atomsLight[1] * 4095;
+		myParas.atomsLight[5 * 3 + 2] = atomsLight[2] * 4095;
+	}
+	else
+	{
+		myParas.atomsLight[5 * 3] = r_cnt / k_no *4095;
+		myParas.atomsLight[5 * 3 + 1] = g_cnt / k_no * 4095;
+		myParas.atomsLight[5 * 3 + 2] = b_cnt / k_no * 4095;
+
+		atomsLight[0] = r_cnt / k_no;//fog[maxindex * 3];
+		atomsLight[1] = g_cnt / k_no;//fog[maxindex * 3 + 1];
+		atomsLight[2] = b_cnt / k_no;//fog[maxindex * 3 + 2];
+	}
+
+	//atomsLight[0] = fog[indice_index * 3];
+	//atomsLight[1] = fog[indice_index * 3 + 1];
+	//atomsLight[2] = fog[indice_index * 3 + 2];
 	
-    atomsLight[0]=fog[maxindex*3];
-    atomsLight[1]=fog[maxindex*3+1];
-    atomsLight[2]=fog[maxindex*3+2];
-	 
+	//FILE *fp_atom;
+	//fp_atom = fopen("atom.xls", "ab+");
+	printf("Atomsphere point Height: %d Width: %d\nR: %f G: %f B: %f\n", indice_index / iWidth, indice_index%iWidth, atomsLight[0] * 4096, atomsLight[1] * 4096, atomsLight[2] * 4096);
+	//fprintf(fp_atom, "%d\t%d\t\t%f\t%f\t%f\t\n", indice_index / iWidth, indice_index%iWidth, atomsLight[0] * 4096, atomsLight[1] * 4096, atomsLight[2] * 4096);
+	//fclose(fp_atom);
+
 	//start = clock();    
     
     for(i=0;i<iHeight;i++)
@@ -583,7 +662,7 @@ int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
     imerode(im,im_dark,iHeight,iWidth,iChannel,radius);
     
 	end = clock();
-	printf("2.Atomosphere ligth estimation time is %dms.\n",end-start);
+	printf("2.Atomosphere light estimation time is %dms.\n",end-start);
 
     for(i=0;i<iSize;i++)
     {
@@ -671,14 +750,18 @@ int DeHazeCPU(short *img, int radius, int tolerance, struct DehazeParas myParas)
 			//t0=ones(m,n)*0.1;tDown=max(t0,alpha2);
 		}
 	}
+
+	//by Wxyun 20181009, add -b option
 	for(i=0;i<iHeight;i++)
     {
         for(j=0;j<iWidth;j++)
         {
             for(n=0;n<iChannel;n++)
             {
-                clear[(i*iWidth+j)*iChannel+n]		=
-                (fog[i*iWidth*iChannel+j*iChannel+n]-atomsLight[n])/tDown[i*iWidth+j]+atomsLight[n];
+                float temp		=
+                (fog[i*iWidth*iChannel+j*iChannel+n]-atomsLight[n])/tDown[i*iWidth+j] + atomsLight[n];
+
+				clear[(i*iWidth + j)*iChannel + n] = temp + (1 - temp)*temp*brightadapt;
             }
         }
     }

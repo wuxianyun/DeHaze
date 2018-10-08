@@ -1,5 +1,6 @@
 #include "YUVRGBconvert.h"
 #include <math.h>
+#include <stdio.h>
 /*
 * @brief yuv2rgb
 * @param y [0, 255]
@@ -7,13 +8,14 @@
 * @param v [0, 255]
 * @return #ABGR
 */
+#define inline
 
 int qRound(float x)
 {
 	return (int)(x + 0.5);
 }
 
-int qBound(int min, int x, int max)
+ int qBound(int min, int x, int max)
 {
 
 	if (x < min)
@@ -24,38 +26,38 @@ int qBound(int min, int x, int max)
 	return x;
 }
 
-int yuv2r(int y, int u, int v)
+ int yuv2r(int y, int u, int v)
 {
 	int R = qRound(y + 1.403 * (v - 2048));
 	R = qBound(0, R, 4095);
 	return R;
 }
-int yuv2g(int y, int u, int v)
+ int yuv2g(int y, int u, int v)
 {
 	int R = qRound(y-0.343 * (u - 2048) - 0.714 * (v - 2048));
 	R = qBound(0, R, 4095);
 	return R;
 }
-int yuv2b(int y, int u, int v)
+ int yuv2b(int y, int u, int v)
 {
 	int R = qRound(y + 1.770 * (u - 2048));
 	R = qBound(0, R, 4095);
 	return R;
 }
 
-int rgb2y(int R, int G, int B)
+ int rgb2y(int R, int G, int B)
 {
 	int	Y = 0.299 * R + 0.587 * G + 0.114 * B;
 	return qBound(0, Y, 4095);
 }
 
-int rgb2u(int R, int G, int B)
+ int rgb2u(int R, int G, int B)
 {
 	int	U = -0.169 * R - 0.331 * G + 0.500 * B + 2048;
 	return qBound(0, U, 4095);
 }
 
-int rgb2v(int R, int G, int B)
+ int rgb2v(int R, int G, int B)
 {
 	int	V = 0.500 * R - 0.419 * G - 0.081 * B + 2048;
 	return qBound(0, V, 4095);

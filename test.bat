@@ -1,0 +1,1 @@
+DeHazeDJI_1.04.exe -b 0.2 -r 15 -w 3840 -h 2160 -i 20180820_3840x2160_444_10bit-8.yuv -o out.raw

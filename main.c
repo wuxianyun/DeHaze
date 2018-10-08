@@ -17,6 +17,7 @@
 
 //#define _CRT_SECURE_NO_WARNINGS
 
+//by Wxyun 20181009, add -b parameter
 struct globalArgs_t {
 
 	char outFileName[200];    /* -o option */
@@ -28,17 +29,20 @@ struct globalArgs_t {
 	int numInputFiles;          /* # of input files */
 
 	int radius;             /* --randomize option */
+	float brightadapt;	/* -b option */
 } globalArgs;
 
-static const char *optString = "i:o:w:h:r:k:";
+static const char *optString = "i:o:w:h:r:k:b:";
 
+//by Wxyun 20181009, add -b parameter
 static const struct option longOpts[] = {
 	//{ "inputFiles", no_argument, NULL, 'I' },
 	{ "width", required_argument, NULL, 'w' },
 	{ "height", required_argument, NULL, 'h' },
 	{ "input file", required_argument, NULL, 'i' },
-	{ "radius", no_argument, NULL, 'r' },
-	{ "cha", no_argument, NULL, 'k' },
+	{ "radius (default: 15)", no_argument, NULL, 'r' },
+	{ "cha (default: 1400)", no_argument, NULL, 'k' },
+	{ "light adapt(default: 0.2)", no_argument, NULL, 'b' },
 	{ "output file", no_argument, NULL, 'o' },
 	{ NULL, no_argument, NULL, 0 }
 };
@@ -61,6 +65,8 @@ int main(int argc, char *argv[])
 	int				iWidth, iHeight, iChannel, iSize;
 	int				radius=15;
 	int				tolerance = 1600;//default value
+	//by Wxyun 20181009, add -b parameter
+	float			brightadapt = 0.2f;
 
 	struct DehazeParas myParas;
 	int				opt;
@@ -95,6 +101,11 @@ int main(int argc, char *argv[])
 		case 'k':
 			tolerance = (int)atoi(optarg);
 			break;
+		
+		//by Wxyun 20181009, add -b parameter
+		case 'b':
+			brightadapt = (float)atof(optarg);
+			break;
 
 		case 0:     /* long option without a short arg */
 			//if (strcmp("randomize", longOpts[longIndex].name) == 0) {
@@ -110,8 +121,8 @@ int main(int argc, char *argv[])
 		opt = getopt_long(argc, argv, optString, longOpts, &longIndex);
 	}
 
-	printf("----------------Current version: 1.03---------------------------\n");
-	printf("----------------Update date: 20180916---------------------------\n");
+	printf("----------------Current version: 1.04---------------------------\n");
+	printf("----------------Update date: 20181009---------------------------\n");
 
 	
 	iWidth = globalArgs.width;
@@ -129,12 +140,22 @@ int main(int argc, char *argv[])
 		printf( "Open the YUV file %s failed" , input_name );
 		exit(1);
 	}
+	else
+	{
+		printf("Process file name is: %s.\n", input_name);
+	}
+
 	outfile = fopen(globalArgs.outFileName, "wb");
 	if (outfile == NULL)
 	{
 		printf("Open the output file %s failed", globalArgs.outFileName);
 		exit(1);
 	}
+	else
+	{
+		printf("Write file name is: %s.\n", globalArgs.outFileName);
+	}
+
 //初始化去雾参数
 	{
 
@@ -163,6 +184,10 @@ int main(int argc, char *argv[])
 		myParas.alpha2 = (float *)malloc(iHeight*iWidth*sizeof(float));
 		myParas.clear = (float *)malloc(iHeight*iWidth*iChannel*sizeof(float));
 
+		//by Wxyun 20181009
+		myParas.atomsLight = (float *)malloc(6 * 3 * sizeof(float));
+		myParas.Index = (int *)malloc(1 * sizeof(int));
+
 	}
 
 	__int64 filelength;
@@ -181,6 +206,8 @@ int main(int argc, char *argv[])
 	while (current_len < filelength)
 	{
 		printf("Process frame %d, ", framecnt);
+		//by Wxyun 20181009
+		myParas.atmoNum = framecnt;
 
 		current_len += iWidth * iHeight * iChannel * sizeof(short);
 		printf("process length %I64u, ", current_len);
@@ -213,7 +240,7 @@ int main(int argc, char *argv[])
 		
 		//by Wxyun 201809122322, add tolerance parameter
 
-		DeHazeCPU(img, radius, tolerance, myParas); //radius = 7
+		DeHazeCPU(img, radius, tolerance, brightadapt, myParas); //radius = 7
 		fwrite(img, 1, iWidth * iHeight * iChannel * sizeof(short), outfile);
 
 		framecnt++;
